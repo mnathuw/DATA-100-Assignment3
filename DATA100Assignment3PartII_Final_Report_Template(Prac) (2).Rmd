@@ -1,0 +1,585 @@
+---
+title: "DATA-100 Assignment 3 Part II"
+subtitle: "Exploring Disparate Data: Part 3 - Final Report"
+author: "This is the way"
+date: "Due November 26th, 2025"
+output: pdf_document
+---
+
+List your group members, including their student numbers, here:
+
+-   Thu Mai
+-   Michael Gathege Kamunyo
+
+```{r}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, fig.width = 6)
+
+library(tidyverse)
+library(arrow)
+theme_set(theme_bw())
+library(openxlsx)
+library(janitor)
+```
+
+# Abstract
+
+This report looks into the effects of climate change by analyzing trends in hurricane strength, polar ice extent, and public awareness across regions. Using data on hurricane intensity from the Atlantic and North Pacific, annual ice extent in the Arctic and Antarctic, and climate awareness survey responses from various countries, we use exploratory data analysis techniques such as trend analysis and data visualization to uncover patterns and relationships. This analysis provides insights into the tangible effects of climate change and emphasizes the importance of global awareness and action.
+
+# Introduction
+
+Climate change has been a topic of global concern and extensive study, affecting diverse aspects of life and the environment across continents. Understanding the physical and public awareness of climate change may be crucial for developing a plan to tackle and adapt new strategies to fend of climate change.In this report, we'll examine data on hurricane strength, sea ice extent, and climate awareness. Our approach will involve using trend analysis, correlation studies, and data visualizations to identify patterns and relationships within and across these data sets.By the end of this report, we will have provided insights into how climate change manifests through environmental changes, affects public awareness and perceptions.
+
+# Data Description
+
+## \<\<NOAA data for Atlantic and Pacific Basin\>\>
+
+```{r load_data1}
+# Put in your code to load in the data set, along with any
+# necessary cleaning beyond what was done in Part 1
+
+# Note that the code in this document will not be shown
+# when you click "knit", so the placement of this code
+# chunk is purely for your benefit: You can see what happened
+# with your data, which makes it easier to describe below!
+
+cyclone_data_address <- "https://www.nhc.noaa.gov/data/hurdat/"
+at_cyclone_filename <- "hurdat2-1851-2022-050423.txt"
+np_cyclone_filename <- "hurdat2-nepac-1949-2022-050423.txt"
+
+new_columns <- c("status", "latitude", "longitude", "max_wind",
+    "min_pressure", "NE_extend_34", "SE_extend_34", "SW_extend_34",
+    "NW_extend_34", "NE_extend_50", "SE_extend_50", "SW_extend_50",
+    "NW_extend_50", "NE_extend_64", "SE_extend_64", "SW_extend_64",
+    "NW_extend_64", "r_max_wind"
+)
+
+at_cyclone <- str_c(cyclone_data_address, at_cyclone_filename, sep = "") |>
+    read_csv(
+        col_names = c(as.character(1:4)),
+        progress = FALSE,
+        show_col_types = FALSE
+    ) |>
+    separate_wider_delim(
+        cols = `4`,
+        # Set the delim and the names
+        # YOUR CODE HERE
+        delim = ",",
+        names = new_columns
+    ) |>
+    mutate(
+        across(everything(), str_trim),
+        # make "-999" NAs, make "-99" NAs
+        # Create columns BasinNumberYear, Name, and Entries
+        across(everything(), ~na_if(., "-999")),
+        across(everything(), ~na_if(., "-99")),
+        BasinNumberYear = ifelse(is.na(status), `1`, NA),
+        Name = ifelse(is.na(status), `2`, NA),
+        Entries = ifelse(is.na(status), `3`, NA)
+    ) |>
+    relocate(BasinNumberYear, Name, Entries) |>
+    fill(BasinNumberYear, Name, Entries) |>
+    filter(!is.na(status))  |>
+    select(-Entries) |>
+    separate_wider_position(
+        BasinNumberYear,
+        # Specify the widths
+        # YOUR CODE HERE
+        widths = c(Basin = 2, Number = 2, NameYear = 4)
+    ) |>
+    separate_wider_position(
+        `1`,
+        # Specify the widths
+        # YOUR CODE HERE
+        widths = c(ObservYear = 4, Month = 2, Day = 2)
+    ) |>
+    separate_wider_position(
+        `2`,
+        # Specify the widths
+        # YOUR CODE HERE
+        widths = c(Hour = 2, Minute = 2)
+    ) |>
+    rename(
+        Identifier = `3`
+    ) |>
+    mutate(
+        across(
+            c(NameYear, ObservYear, Month, Day, Hour,
+                Minute, Number),
+            as.integer
+        )
+    ) |>
+    mutate(across(max_wind:r_max_wind, as.numeric))
+
+
+print(at_cyclone)
+
+
+
+np_cyclone <- str_c(cyclone_data_address, np_cyclone_filename, sep = "") |>
+    # ALL of the steps all over again
+    # YOUR CODE HERE
+    read_csv(
+        col_names = c(as.character(1:4)),
+        progress = FALSE,
+        show_col_types = FALSE
+    ) |>
+    separate_wider_delim(
+        cols = `4`,
+        delim = ",",
+        names = new_columns
+    ) |>
+    mutate(
+        across(everything(), str_trim),
+        across(everything(), ~na_if(., "-999")),
+        across(everything(), ~na_if(., "-99")),
+        BasinNumberYear = ifelse(is.na(status), `1`, NA),
+        Name = ifelse(is.na(status), `2`, NA),
+        Entries = ifelse(is.na(status), `3`, NA)
+    ) |>
+    relocate(BasinNumberYear, Name, Entries) |>
+    fill(BasinNumberYear, Name, Entries) |>
+    filter(!is.na(status))  |>
+    select(-Entries) |>
+    separate_wider_position(
+        BasinNumberYear,
+        widths = c(Basin = 2, Number = 2, NameYear = 4)
+    ) |>
+    separate_wider_position(
+        `1`,
+        widths = c(ObservYear = 4, Month = 2, Day = 2)
+    ) |>
+    separate_wider_position(
+        `2`,
+        widths = c(Hour = 2, Minute = 2)
+    ) |>
+    rename(
+        Identifier = `3`
+    ) |>
+    mutate(
+        across(
+            c(NameYear, ObservYear, Month, Day, Hour,
+                Minute, Number),
+            as.integer
+        )
+    ) |>
+    mutate(across(max_wind:r_max_wind, as.numeric))
+
+print(np_cyclone)
+
+cyclones_data_update_0 <- bind_rows(at_cyclone, np_cyclone)
+
+print(cyclones_data_update_0)
+
+convert_latlon <- function(latlon) {
+    # YOUR CODE HERE
+    if_else(str_detect(latlon, "[WS]"), -parse_number(latlon), parse_number(latlon))
+}
+
+test_data <- c("49W", "49.99W", "49E", "49.99E", "49N", "49.99S", "-0.0W")
+
+# If this returns "TRUE", then your function will work on the real data.
+all.equal(
+    convert_latlon(test_data),
+    c(-49, -49.99, 49, 49.99, 49, -49.99, 0)
+)
+
+cyclones_data_update_1 <- cyclones_data_update_0 |>
+    mutate(
+        lat = convert_latlon(latitude),
+        lon = convert_latlon(longitude)
+    )
+
+cyclones_data_update_2 <- cyclones_data_update_1 |>
+    mutate(
+        # YOUR CODE HERE
+        date = make_datetime(ObservYear, Month, Day, Hour, Minute)
+    )
+
+print(cyclones_data_update_2)
+
+cat_levels <- c("TD", "TS", "1", "2", "3", "4", "5")
+
+cyclones_data <- cyclones_data_update_2 |>
+    mutate(
+        category = ordered(
+            case_when(
+                # YOUR CODE HERE
+                max_wind < 34 ~ "TD",
+                max_wind >= 34 & max_wind < 64 ~ "TS",
+                max_wind >= 64 & max_wind < 83 ~ "1",
+                max_wind >= 83 & max_wind < 96 ~ "2",
+                max_wind >= 96 & max_wind < 113 ~ "3",
+                max_wind >= 113 & max_wind < 137 ~ "4",
+                max_wind >= 137 ~ "5"
+            ),
+            levels = cat_levels
+        )
+    )
+
+print(cyclones_data)
+
+write_parquet(cyclones_data, "cyclones_data.parquet")
+
+hurricane_summary <- cyclones_data |>
+  filter(!is.na(category)) |>
+  mutate(decade = floor(ObservYear/10) * 10) |>
+  group_by(Basin, decade, category) |>
+  summarise(count = n(), .groups = "drop")
+
+```
+
+The data comes from two data sets from the National Oceanic and Atmospheric Administration (NOAA). The two data sets contain information on hurricane strength in both the Atlantic and North Pacific basins. We used the data sets to categorize the cyclones based on their strength using what we learnt on categorizing storms in assignment one.
+
+In order to clean the data, we followed the steps given in assignment two. We then combined the data from the Atlantic and Pacific basin data sets. After that we had to fix the format of the latitude and longitude columns in order to make it neat for plotting, We created a function that got rid of decimals and outputs a positive version of the numeric part if there's an "N" or an "E", and a negative version of the numeric part if there's a "W" or "S", Afterwards we had to extract dates in order for R to know how to plot the times, we did this by using the `make_datetime()` function on the column ObservYear. Furthermore, we then had to categorize the storms based on their strength. This was accomplished by creating a new column called category, which displays the strength according to the Saffir-Simpson hurricane wind scale (SSHWS). Lastly, we saved the cleaned data to a file named "cyclones_data.parquet" for further analysis.
+
+## \<\<Sea Ice Data\>\>
+
+```{r load_data2}
+# Put in your code to load in the data set, along with any
+# necessary cleaning beyond what was done in Part 1
+
+# Reminder: do NOT print your data to the screen unless it's
+# completely necessary
+
+sea_ice_extent_xlsx <- "https://masie_web.apps.nsidc.org/pub//DATASETS/NOAA/G02135/seaice_analysis/Sea_Ice_Index_Daily_Extent_G02135_v4.0.xlsx"
+
+NH_daily <- sea_ice_extent_xlsx |>
+    read.xlsx(
+        sheet = "NH-Daily-Extent",
+    ) |>
+    select(X1, X2, `1978`:`2023`) |>
+    rename(
+        month = X1,
+        day = X2
+    ) |>
+    fill(month) |>
+    pivot_longer(
+        cols = `1978`:`2023`,
+        names_to = "year",
+        values_to = "ice_extent",
+        values_drop_na = TRUE,
+    ) |>
+    mutate(
+        year = as.integer(year),
+        month = ordered(
+            month,
+            levels = c("January", "February", "March", "April",
+                "May", "June", "July", "August", "September",
+                "October", "November", "December")),
+        region = "Arctic",
+    ) |>
+    arrange(
+        year, month, day
+    )
+
+SH_daily <- sea_ice_extent_xlsx |>
+    read.xlsx(
+        sheet = "SH-Daily-Extent",
+        skipEmptyCols = TRUE,
+        fillMergedCells = TRUE,
+        cols = 1:48
+    ) |>
+    rename(
+        month = X1,
+        day = X2
+    ) |>
+    pivot_longer(
+        cols = `1978`:`2023`,
+        names_to = "year",
+        names_transform = list(year = as.integer),
+        values_to = "ice_extent",
+        values_drop_na = TRUE,
+    ) |>
+    mutate(
+        month = ordered(
+            month,
+            levels = c("January", "February", "March", "April",
+                "May", "June", "July", "August", "September",
+                "October", "November", "December")
+        ),
+        region = "Antarctic",
+    ) |>
+    arrange(
+        year, month, day
+    )
+
+ice_extent_daily <- bind_rows(NH_daily, SH_daily) |>
+    mutate(date = make_date(year, month, day)) |>
+    arrange(region, date)
+
+ice_extent_daily
+
+ice_extent_daily |>
+    ggplot() +
+        aes(x = yday(date), y = ice_extent, colour = year, group = factor(year)) +
+        geom_line() +
+        facet_wrap(~region) +
+        #coord_polar() +
+        scale_colour_distiller(
+            direction = 1, type = "seq", palette = 3
+        )
+
+ice_extent_yearly <- ice_extent_daily |>
+    # YOUR CODE HERE
+    group_by(year, region) |>
+    summarise(
+        min = min(ice_extent, na.rm = TRUE),
+        max = max(ice_extent, na.rm = TRUE),
+        .groups = "drop"
+    ) |>
+    pivot_longer(
+        cols = c(min, max),
+        names_to = "name",
+        values_to = "value"
+    )
+
+ice_extent_yearly
+
+ggplot(ice_extent_yearly) +
+    aes(x = year, y = value, colour = name) +
+    geom_line() +
+    facet_wrap(~ region) +
+    labs(
+        x = "Year", y = "Sea Ice Extent",
+        colour = "Stat",
+        title = "Min and Max Sea Ice Extent, by Year",
+        subtitle = "Arctic is clearly decreasing, Antarctic is possibly becoming more variable."
+    )
+
+write_parquet(ice_extent_yearly, "ice_extent_yearly.parquet")
+
+ice_trends <- ice_extent_yearly |>
+  group_by(region, name, year) |>
+  summarise(value = mean(value, na.rm = TRUE), .groups = "drop") |>
+  arrange(region, name, year)
+```
+
+This data comes from the 2023 Arctic Sea Ice Report, sourced mainly from satellite observations and sea ice modeling. The details of the data set include thickness, extent, seasonal variations, and long-term trends in Arctic sea ice. This report reflects the warming temperatures in the Arctic and the declining ice coverage, including earlier seasonal melting and later freezes.
+
+In order to clean the data, we first loaded the “Sea Ice Report” from the NOAA Government website. We then converted the data set from a wide format to a long format to make it easier to adjust and categorize by date. Next, we renamed columns and filled in missing values with the appropriate values. Moreover, we converted month names to ordered factors, sorted by date, and merged both data sets for analysis. Lastly, we saved the cleaned data to a file named "ice_extent_yearly.parquet" for further analysis.
+
+## \<\<Climate Awareness Data\>\>
+
+```{r load_data3}
+# Put in your code to load in the data set, along with any
+# necessary cleaning beyond what was done in Part 1
+
+climate_opinion_address <- "https://data.humdata.org/dataset/dc9f2ca4-8b62-4747-89b1-db426ce617a0/resource/6041db5f-8190-47ff-a10b-9841325de841/download/climate_change_opinion_survey_2022_aggregated.xlsx"
+
+climate_sheet_names <- climate_opinion_address |>
+    loadWorkbook() |>
+    names()
+
+aware_sheet_name <- "climate_awareness"
+
+climate_awareness <- climate_opinion_address |>
+    openxlsx::read.xlsx(
+        sheet = aware_sheet_name
+    ) |>
+    pivot_longer(
+        cols = !contains(aware_sheet_name),
+        names_to = "country",
+        values_to = "score"
+    ) |>
+    mutate(
+        climate_awareness = case_when(
+            climate_awareness == "I have never heard of it" ~ "aware_no",
+            climate_awareness == "I know a little about it" ~ "aware_alittle",
+            climate_awareness == "I know a moderate amount about it" ~
+                "aware_moderate",
+            climate_awareness == "I know a lot about it" ~ "aware_alot",
+            climate_awareness == "Refused" ~ "aware_refuse",
+            climate_awareness == "(Unweighted Base)" ~ "aware_base"
+        )
+    ) |>
+    rename(answer = climate_awareness) |>
+    pivot_wider(
+        names_from = answer,
+        values_from = score
+    )
+
+write_parquet(climate_awareness, "climate_awareness.parquet")
+
+climate_awareness
+
+awareness_analysis <- climate_awareness |>
+  mutate(total_aware = aware_alittle + aware_moderate + aware_alot,
+         high_awareness_ratio = aware_alot / total_aware) |>
+  filter(!is.na(high_awareness_ratio))
+```
+
+This data comes from a global climate change opinion survey data set, specifically the "Climate Awareness" sheet in the 2022 aggregated climate opinion survey, and describes responses from people in various countries regarding their level of awareness of climate change. The levels of awareness include options like "never heard of it," "know a little," "know a moderate amount," "know a lot," and others.
+
+To clean the data, we first accessed the "climate_awareness" sheet from the climate opinion survey file. We then converted the data from a wide format to a long format to make it easier to manipulate and categorize by awareness level using the pivot_longer function. Afterwards, we altered the text responses, e.g., "I have never heard of it" to an easier format, e.g., aware_no, aware_alittle, for a more clear understanding. After we renamed the column storing awareness levels to "answer" for better readability. We then transformed the data back to a wide format, where each awareness level became a separate column using the pivot_wider function. Lastly, we saved the cleaned data to a file named "climate_awareness.parquet" for further analysis.
+
+## Combining the Data
+
+We had to combine the data on hurricanes in the Atlantic and Pacific basins, respectively. To do this, we used a full join operation to ensure all information was retained to be analyzed in our report. We did not have to modify any columns since both data sets in the Atlantic and Pacific basins already had the same columns and contained the same information.
+
+# Exploratory Data Analysis
+
+To achieve our goals, we explored the data by examining trends in all three data sets to help uncover a reason that will help illustrate the physical and economic impacts climate change has on different parts of the world.
+
+The first aspect that we found interesting is shown in \@ref(fig:insight1). This insight focuses on the different trends in hurricane intensity between the ocean basins. The insight shows us the both Atlantic and Eastern Pacific a somewhat steady average throughout the years, while the Central Pacific has multiple outbursts throughout the years and is slightly decreasing.
+
+```{r insight1, fig.cap="Hurricane Intensity Trends Across Ocean Basins"}
+# This is an example of how you can control figures and captions in
+# an R chunk. Note that you can reference figures using:
+# \@ref(fig:insight1), where "insight1" is the label of this code
+# chunk (the first bit of text after the "r" in "```{r label, options...}")
+basin_trends <- cyclones_data |>
+  filter(!is.na(max_wind), ObservYear >= 1980, Basin %in% c("AL", "EP", "CP")) |>
+  group_by(Basin, ObservYear) |>
+  summarise(
+    avg_intensity = mean(max_wind, na.rm = TRUE),
+    max_intensity = max(max_wind, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  mutate(
+    Basin = case_when(
+      Basin == "AL" ~ "Atlantic",
+      Basin == "EP" ~ "Eastern Pacific",
+      Basin == "CP" ~ "Central Pacific"
+    )
+  )
+
+ggplot(basin_trends, aes(x = ObservYear, y = avg_intensity, color = Basin)) +
+  geom_line(size = 1.3) +
+  facet_wrap(~Basin, nrow = 3) +
+  geom_smooth(method = "lm") +
+  labs(
+    title = "Hurricane Intensity Trends Across Ocean Basins",
+    x = "Year",
+    y = "Average Maximum Wind Speed (knots)"
+  ) +
+  theme_dark()
+
+```
+
+This insight is supported by the summary statistics in table \@ref(tab:summary_stats), which provides an overview of the average hurricane wind speed and other important key climate indicators.
+
+```{r summary_stats}
+# Calculate the relevant summary statistics here.
+# Note that the "kable" function in the "knitr" package
+# is convenient for making nice tables. Other packages can
+# do much fancier things with tables, but keep in mind that
+# the insights should be the star, not the formatting.
+
+hurricane_summary_stats <- cyclones_data |>
+  filter(ObservYear >= 2000) |>
+  summarise(
+    avg_wind_speed = mean(max_wind, na.rm = TRUE),
+    max_wind_speed = max(max_wind, na.rm = TRUE),
+    major_hurricanes = sum(category %in% c("3", "4", "5"), na.rm = TRUE),
+    .groups = "drop"
+  )
+
+awareness_summary_stats <- climate_awareness |>
+  summarise(
+    avg_high_awareness = mean(aware_alot, na.rm = TRUE),
+    max_high_awareness = max(aware_alot, na.rm = TRUE),
+    min_high_awareness = min(aware_alot, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+summary_table <- tribble(
+  ~Metric, ~Value,
+  "Average Hurricane Wind Speed ", str_c(round(hurricane_summary_stats$avg_wind_speed, 2), " knots"),
+  "Maximum Recorded Wind Speed", str_c(hurricane_summary_stats$max_wind_speed, " knots"),
+  "Major Hurricanes (Category 3-5)", str_c(hurricane_summary_stats$major_hurricanes),
+  "Average High Climate Awareness", str_c(round(awareness_summary_stats$avg_high_awareness, 2), "%"),
+  "Maximum High Awareness Country", str_c(round(awareness_summary_stats$max_high_awareness, 2), "%")
+)
+summary_table
+knitr::kable(summary_table, caption = "Summary Statistics of Key Climate Indicators")
+```
+
+The next insight that we found is shown in \@ref(fig:insight2), which are the top 15 and bottom 15 countries in knowing about climate change. The insight shows us the country with the highest climate change awareness is Finland, while the country with the lowest climate awareness was Thailand.
+
+```{r insight2, fig.height=4, fig.width=6, fig.cap="Highest/Lowest Climate Change Awareness"}
+# This figure will have a height of 4 and a width of 6.
+# Feel free to change this, and to apply different sizes
+# to the other figures you create.
+
+top_awareness <- climate_awareness |>
+  arrange(desc(aware_alot)) |>
+  slice_head(n = 15)
+
+bottom_awareness <- climate_awareness |>
+  arrange(aware_alot) |>
+  slice_head(n = 15)
+
+awareness_comparison <- bind_rows(
+  top_awareness |> mutate(type = "High Awareness"),
+  bottom_awareness |> mutate(type = "Low Awareness")
+)
+
+ggplot(awareness_comparison, aes(x = reorder(country, aware_alot), y = aware_alot, fill = type)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(
+    title = "Highest/Lowest Climate Change Awareness",
+    x = "Country",
+    y = "Percentage Reporting 'Know a Lot' About Climate Change(%)",
+    fill = "Awareness Level"
+  ) +
+  theme_minimal()
+```
+
+Finally, \@ref(fig:insight3) shows the relationship between the arctic minimum sea ice extent against the average max wind hurricane speeds. This insight shows a very slight postive correlation between the arctic minimum sea ice extend and the average max wind hurricane speeds.
+
+```{r insight3, fig.height=4, fig.width=6, fig.cap="Arctic Sea Ice Minimum VS Average Max Wind Hurricanes"}
+
+hurricane_yearly <- cyclones_data |>
+  filter(ObservYear >= 1980, ObservYear <= 2022) |>
+  group_by(ObservYear) |>
+  summarise(
+    avg_intensity = mean(max_wind, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  rename(year = ObservYear)
+
+arctic_ice_min <- ice_extent_yearly |>
+  filter(region == "Arctic", name == "min", year >= 1980, year <= 2022)
+
+combined_data <- hurricane_yearly |>
+  inner_join(arctic_ice_min, by = "year") |>
+  rename(arctic_ice_min = value)
+
+
+ggplot(combined_data, aes(x = arctic_ice_min, y = avg_intensity)) +
+  geom_point(aes(color = year), size = 3, alpha = 0.7) +
+  geom_smooth(method = "lm") +
+  labs(
+    title = "Arctic Sea Ice Minimum VS Avg Max Wind Hurricanes",
+    subtitle = "Combining hurricane data from NOAA and sea ice data",
+    x = "Arctic Minimum Sea Ice Extent",
+    y = "Average Max Wind Hurricanes (Knots)",
+    color = "Year"
+  ) +
+  theme_minimal() +
+  scale_color_binned()
+```
+
+# Conclusion
+
+Overall, we found that hurricane intensity [^1] varies across basins, with stable trends in Atlantic and Eastern Pacific but greater volatility in the Central Pacific. We also saw a week positive link between the minimum amount of Arctic sea ice and the strength of hurricanes [^2]. We also saw big differences in how aware people are of climate change around the world [^3].
+
+[^1]: NOAA HURDAT2 Database (Atlantic & Pacific hurricane data). From **NOAA National Hurricane Center**, covering Atlantic and North Pacific data. url: <https://www.nhc.noaa.gov/data/hurdat/>
+
+[^2]: Daily Sea Ice Extent Data (NSIDC / MASIE). From **National Snow and Ice Data Center (NSIDC)**, providing daily extent data. url: <https://masie_web.apps.nsidc.org/pub//DATASETS/NOAA/G02135/seaice_analysis/Sea_Ice_Index_Daily_Extent_G02135_v4.0.xlsx>
+
+[^3]: Climate Awareness Survey (Meta / HDX dataset). From **Humanitarian Data Exchange**, providing the 2022 aggregated survey data file. url: <https://data.humdata.org/dataset/dc9f2ca4-8b62-4747-89b1-db426ce617a0/resource/6041db5f-8190-47ff-a10b-9841325de841/download/climate_change_opinion_survey_2022_aggregated.xlsx>
+
+In more detail, our findings show that differences in intensity patterns are likely caused by basin-specific factors, and that the relationship between polar ice loss and tropical storms is not straightforward. Climate awareness results show that climate education is not the same in all countries.
+
+# Future Work
+
+The next steps in this analysis are to look into how hurricanes change with the seasons, see if being aware of climate change makes people more likely to be affected by disasters, and look at how quickly sea ice is changing. More detailed demographic breakdowns could help find groups that need targeted education.
+
+# Limitations
+
+The limitations of this analysis are as follows. We focused only on Atlantic and Pacific basins, excluded confounding variables like SSTs or ENSO, and relied on single-year awareness data. Differences in cultural interpretation can lead to bias, and correlation alone cannot prove causation.
+
+# References
+https://r4ds.hadley.nz/
